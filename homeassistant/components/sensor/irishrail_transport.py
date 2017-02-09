@@ -28,6 +28,7 @@ ATTR_NEXT_UP = "Later Train"
 
 CONF_ATTRIBUTION = "Data provided by api.irishrail.ie"
 CONF_STATION = 'station'
+CONF_DESTINATION = 'destination'
 CONF_DIRECTION = 'direction'
 
 DEFAULT_NAME = 'Next Train'
@@ -39,8 +40,10 @@ TIME_STR_FORMAT = "%H:%M"
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_STATION): cv.string,
     vol.Optional(CONF_DIRECTION, default=None): cv.string,
+    vol.Optional(CONF_DESTINATION, default=None): cv.string,
     vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string
 })
+
 
 def _parse_station_data(url):
     attr_map = {
@@ -72,18 +75,20 @@ def _parse(url, obj_name, attr_map):
 def setup_platform(hass, config, add_devices, discovery_info=None):
     station = config.get(CONF_STATION)
     direction = config.get(CONF_DIRECTION)
+    destination = config.get(CONF_DESTINATION)
     name = config.get(CONF_NAME)
 
-    data = IrishRailTransportData(station, direction)
-    add_devices([IrishRailTransportSensor(data, station, direction, name)])
+    data = IrishRailTransportData(station, direction, destination)
+    add_devices([IrishRailTransportSensor(data, station, direction, destination, name)])
 
 
 class IrishRailTransportSensor(Entity):
 
-    def __init__(self, data, station, direction, name):
+    def __init__(self, data, station, direction, destination, name):
         """Initialize the sensor."""
         self.data = data
         self._station = station
+        self._direction = direction
         self._direction = direction
         self._name = name
         self.update()
@@ -125,18 +130,17 @@ class IrishRailTransportSensor(Entity):
 
             return {
                 ATTR_STATION: self._station,
+                ATTR_ORIGIN: self._times[0][ATTR_ORIGIN],
+                ATTR_DESTINATION: self._times[0][ATTR_DESTINATION],
                 ATTR_DUE_IN: self._times[0][ATTR_DUE_IN],
                 ATTR_DUE_AT: self._times[0][ATTR_DUE_AT],
                 ATTR_EXPECTED_AT: self._times[0][ATTR_EXPECTED_AT],
-                ATTR_ORIGIN: self._times[0][ATTR_ORIGIN],
-                ATTR_LAST_LOCATION: self._times[0][ATTR_LAST_LOCATION] if not None else 'No Information',
-                ATTR_DESTINATION: self._times[0][ATTR_DESTINATION],
-                ATTR_DIRECTION: self._times[0][ATTR_DIRECTION],
-                ATTR_ATTRIBUTION: CONF_ATTRIBUTION,
                 ATTR_STATUS: self._times[0][ATTR_STATUS],
-                ATTR_NEXT_UP: next_up
+                ATTR_LAST_LOCATION: self._times[0][ATTR_LAST_LOCATION],
+                ATTR_DIRECTION: self._times[0][ATTR_DIRECTION],
+                ATTR_NEXT_UP: next_up,
+                ATTR_ATTRIBUTION: CONF_ATTRIBUTION
             }
-
 
     def update(self):
         """Get the latest data from irishrail and update the states."""
@@ -148,22 +152,24 @@ class IrishRailTransportSensor(Entity):
             self._state = None
 
 
-
 class IrishRailTransportData(object):
-    def __init__(self, station, direction):
+    def __init__(self, station, direction, destination):
         """Initialize the data object."""
         self.station = station
         self.direction = direction
-        self.info = [{ATTR_DUE_AT: 'n/a',
-                      ATTR_STATION: self.station,
+        self.destination = destination
+        self.info = [{ATTR_STATION: self.station,
                       ATTR_ORIGIN: 'n/a',
-                      ATTR_LAST_LOCATION: 'n/a',
-                      ATTR_DESTINATION: 'n/a',
-                      ATTR_EXPECTED_AT: 'n/a',
-                      ATTR_DIRECTION: 'n/a' if direction is None else direction,
+                      ATTR_DESTINATION: 'n/a' if destination is None else destination,
                       ATTR_DUE_IN: 'n/a',
-                      ATTR_STATUS: 'n/a'}]
-
+                      ATTR_DUE_AT: 'n/a',
+                      ATTR_EXPECTED_AT: 'n/a',
+                      ATTR_STATUS: 'n/a',
+                      ATTR_LAST_LOCATION: 'n/a',
+                      ATTR_DIRECTION: 'n/a' if direction is None else direction,
+                      ATTR_NEXT_UP: 'n/a',
+                      ATTR_ATTRIBUTION: CONF_ATTRIBUTION
+                      }]
 
     @Throttle(MIN_TIME_BETWEEN_UPDATES)
     def update(self):
@@ -179,16 +185,18 @@ class IrishRailTransportData(object):
         if len(result) > 0:
             for item in result:
                 direction = item.get('direction')
-                if direction == self.direction or self.direction is None:
-                    train_data = {ATTR_DUE_AT: item.get('scheduled_arrival_time'),
-                                  ATTR_STATION: self.station,
+                destination = item.get('destination')
+                if (direction == self.direction or self.direction is None) and \
+                   (destination == self.destination or self.destination is None):
+                    train_data = {ATTR_STATION: self.station,
                                   ATTR_ORIGIN: item.get('origin'),
-                                  ATTR_LAST_LOCATION: item.get('last_location'),
-                                  ATTR_DESTINATION: item.get('destination'),
-                                  ATTR_DIRECTION: direction,
+                                  ATTR_DESTINATION: destination,
                                   ATTR_DUE_IN: item.get('due_in_mins'),
+                                  ATTR_DUE_AT: item.get('scheduled_arrival_time'),
                                   ATTR_EXPECTED_AT: item.get('expected_departure_time'),
-                                  ATTR_STATUS: item.get('status')
+                                  ATTR_STATUS: item.get('status'),
+                                  ATTR_LAST_LOCATION: item.get('last_location'),
+                                  ATTR_DIRECTION: direction
                                   }
                     train.append(train_data)
 
