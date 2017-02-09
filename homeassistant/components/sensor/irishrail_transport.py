@@ -175,8 +175,8 @@ class IrishRailTransportData(object):
         url = url + urllib.parse.urlencode(param_dict)
         result = _parse_station_data(url)
 
+        train = []
         if len(result) > 0:
-            train = []
             for item in result:
                 direction = item.get('direction')
                 if direction == self.direction or self.direction is None:
